@@ -1,7 +1,7 @@
 [project]
 name = "bible-mem-app"
 version = "0.1.0"
-description = "Add your description here"
+description = "This is a Bible memorisation app that works by allowing users to select verses, reads those verses to users and has the user say the verse back. This start with small segments and, as the user's accuracy increases, increases segment length, until the user can recite full passages."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = []
