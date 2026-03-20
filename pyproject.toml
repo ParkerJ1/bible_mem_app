@@ -4,4 +4,16 @@ version = "0.1.0"
 description = "This is a Bible memorisation app that works by allowing users to select verses, reads those verses to users and has the user say the verse back. This start with small segments and, as the user's accuracy increases, increases segment length, until the user can recite full passages."
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "httpx>=0.27",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: marks tests that make real network calls (deselect with '-m \"not integration\"')",
+]
