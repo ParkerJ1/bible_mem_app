@@ -106,7 +106,9 @@ class TestWEBProviderErrors:
 
     def test_http_error_propagates(self, provider: WEBProvider) -> None:
         """An HTTP-level error (e.g. 500) should propagate via raise_for_status."""
-        with patch("src.text.web_provider.httpx.get") as mock_get:
+        with patch("src.text.web_provider._load_from_cache", return_value={}), \
+             patch("src.text.web_provider._store_in_cache"), \
+             patch("src.text.web_provider.httpx.get") as mock_get:
             mock = MagicMock(spec=httpx.Response)
             mock.raise_for_status.side_effect = httpx.HTTPStatusError(
                 "500", request=MagicMock(), response=MagicMock()
