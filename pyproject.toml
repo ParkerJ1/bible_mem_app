@@ -10,6 +10,7 @@ dependencies = [
     "openai-whisper>=20250625",
     "python-dotenv>=1.2.2",
     "sqlalchemy>=2.0.48",
+    "whisperx",
 ]
 
 [dependency-groups]
@@ -21,3 +22,6 @@ dev = [
 markers = [
     "integration: marks tests that make real network calls (deselect with '-m \"not integration\"')",
 ]
+
+[tool.uv.sources]
+whisperx = { git = "https://github.com/m-bain/whisperX.git" }

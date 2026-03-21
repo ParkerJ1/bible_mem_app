@@ -67,7 +67,7 @@ Takes a recorded audio clip from the user, returns a transcript string.
 
 **Scorer** (`src/scorer/`)
 Compares a user transcript against the expected segment text. 
-The scorer uses sequence alignment (not simple sequential matching) to compare the user's transcript against the expected text. This ensures that extra or inserted words do not cause correct words later in the sentence to be marked wrong. The score reflects only accuracy on the expected words. The diff should distinguish between missing words, correct words, and inserted words so the user gets useful feedback. Returns a score and a word-level diff.
+The scorer uses sequence alignment (not simple sequential matching) to compare the user's transcript against the expected text. This ensures that extra or inserted words do not cause correct words later in the sentence to be marked wrong. The score reflects only accuracy on the expected words. The diff should distinguish between missing words, correct words, and inserted words so the user gets useful feedback. A binary flag is used to allow for strict or lenient modes of scoring, where lemmatisation is allowed. Returns a score and a word-level diff.
 
 - Target: word-perfect scoring (the goal of Bible memorisation)
 - Normalises for case, punctuation, and common transcription noise before scoring
@@ -120,6 +120,7 @@ No heavy frontend framework in Phase 1 - plain JS is sufficient.
 | TTS (default)    | Google Cloud TTS or ElevenLabs                     |
 | Testing          | pytest                                             |
 | Config/secrets   | python-dotenv, `.env` file                         |
+| Lemmatisation    | nltk                                               |
 
 ---
 
