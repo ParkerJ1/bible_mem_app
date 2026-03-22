@@ -10,6 +10,7 @@ import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from src.api.dependencies import USER_ID, get_session_manager
@@ -144,6 +145,28 @@ def get_segments(
         segments=segments,
         count=len(segments),
     )
+
+
+@router.get("/{passage_ref}/segments/{segment_idx}/audio")
+def get_segment_audio(
+    passage_ref: str,
+    segment_idx: int,
+    sm: SessionManager = Depends(get_session_manager),
+) -> FileResponse:
+    """Stream the pre-computed audio clip for a single segment.
+
+    Returns 404 if the segment index is out of range, if no audio has been
+    prepared for the passage, or if the audio file is not present on disk.
+    """
+    try:
+        path = sm.get_segment_audio(USER_ID, passage_ref, segment_idx)
+    except IndexError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    if path is None or not path.exists():
+        raise HTTPException(status_code=404, detail="Audio not available for this segment")
+
+    return FileResponse(path, media_type="audio/mpeg")
 
 
 @router.post("/score", response_model=SegmentResultResponse)

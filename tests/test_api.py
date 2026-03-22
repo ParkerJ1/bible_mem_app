@@ -295,6 +295,74 @@ class TestGetSegments:
 
 
 # ---------------------------------------------------------------------------
+# GET /sessions/{passage_ref}/segments/{segment_idx}/audio
+# ---------------------------------------------------------------------------
+
+
+class TestGetSegmentAudio:
+    def test_returns_200_with_valid_audio(self, client, mock_sm, tmp_path):
+        audio_file = tmp_path / "seg_0.mp3"
+        audio_file.write_bytes(b"FAKE_MP3_DATA")
+        mock_sm.get_segment_audio.return_value = audio_file
+
+        response = client.get("/sessions/John 3:16/segments/0/audio")
+        assert response.status_code == 200
+
+    def test_response_content_type_is_audio(self, client, mock_sm, tmp_path):
+        audio_file = tmp_path / "seg_0.mp3"
+        audio_file.write_bytes(b"FAKE_MP3_DATA")
+        mock_sm.get_segment_audio.return_value = audio_file
+
+        response = client.get("/sessions/John 3:16/segments/0/audio")
+        assert "audio" in response.headers["content-type"]
+
+    def test_response_body_matches_file(self, client, mock_sm, tmp_path):
+        audio_file = tmp_path / "seg_0.mp3"
+        audio_file.write_bytes(b"FAKE_MP3_DATA")
+        mock_sm.get_segment_audio.return_value = audio_file
+
+        response = client.get("/sessions/John 3:16/segments/0/audio")
+        assert response.content == b"FAKE_MP3_DATA"
+
+    def test_calls_get_segment_audio_with_correct_args(self, client, mock_sm, tmp_path):
+        audio_file = tmp_path / "seg_2.mp3"
+        audio_file.write_bytes(b"DATA")
+        mock_sm.get_segment_audio.return_value = audio_file
+
+        client.get("/sessions/Romans 8:28/segments/2/audio")
+        mock_sm.get_segment_audio.assert_called_once_with(USER_ID, "Romans 8:28", 2)
+
+    def test_returns_404_when_none(self, client, mock_sm):
+        mock_sm.get_segment_audio.return_value = None
+
+        response = client.get("/sessions/John 3:16/segments/0/audio")
+        assert response.status_code == 404
+
+    def test_returns_404_when_file_missing(self, client, mock_sm, tmp_path):
+        missing = tmp_path / "does_not_exist.mp3"
+        mock_sm.get_segment_audio.return_value = missing
+
+        response = client.get("/sessions/John 3:16/segments/0/audio")
+        assert response.status_code == 404
+
+    def test_returns_404_on_index_error(self, client, mock_sm):
+        mock_sm.get_segment_audio.side_effect = IndexError("segment_idx 99 out of range")
+
+        response = client.get("/sessions/John 3:16/segments/99/audio")
+        assert response.status_code == 404
+
+    def test_segment_idx_in_url_is_parsed_as_int(self, client, mock_sm, tmp_path):
+        audio_file = tmp_path / "seg_3.mp3"
+        audio_file.write_bytes(b"DATA")
+        mock_sm.get_segment_audio.return_value = audio_file
+
+        client.get("/sessions/John 3:16/segments/3/audio")
+        call_args = mock_sm.get_segment_audio.call_args[0]
+        assert call_args[2] == 3
+        assert isinstance(call_args[2], int)
+
+
+# ---------------------------------------------------------------------------
 # POST /sessions/score
 # ---------------------------------------------------------------------------
 
