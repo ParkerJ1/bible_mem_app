@@ -18,6 +18,8 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from src.api.dependencies import DEFAULT_LIST_NAME, USER_ID
 from src.api.routers import progress, sessions, verses
@@ -44,6 +46,14 @@ app = FastAPI(
 app.include_router(verses.router)
 app.include_router(sessions.router)
 app.include_router(progress.router)
+
+app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
+
+
+@app.get("/")
+def serve_index() -> FileResponse:
+    """Serve the single-page frontend."""
+    return FileResponse("frontend/index.html")
 
 
 # ---------------------------------------------------------------------------

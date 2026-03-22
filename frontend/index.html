@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Scripture Memory</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+
+  <header id="app-header">
+    <button id="btn-settings" class="gear-btn" aria-label="Settings" title="Settings">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+    </button>
+    <h1>Scripture Memory</h1>
+    <button id="btn-practice" class="practice-btn">Practice</button>
+  </header>
+
+  <main id="main-content">
+    <div id="loading-state" aria-live="polite">
+      <div class="spinner"></div>
+    </div>
+
+    <ul id="verse-list" role="list" aria-label="Your verses"></ul>
+
+    <div id="empty-state" hidden>
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+      </svg>
+      <p class="empty-title">No verses yet</p>
+      <p class="empty-sub">Tap <strong>+</strong> to add your first verse.</p>
+    </div>
+  </main>
+
+  <button id="fab" aria-label="Add verse" title="Add verse">+</button>
+
+  <!-- ── Add verse modal ─────────────────────────────────────── -->
+  <div id="modal-add" class="modal" aria-hidden="true" role="dialog" aria-labelledby="add-modal-title">
+    <div class="modal-backdrop"></div>
+    <div class="modal-sheet">
+      <h2 id="add-modal-title">Add verse</h2>
+      <label for="ref-input" class="field-label">Passage reference</label>
+      <input
+        id="ref-input"
+        type="text"
+        class="ref-input"
+        placeholder="e.g. John 3:16 or Romans 8:28-30"
+        autocomplete="off"
+        autocorrect="off"
+        autocapitalize="words"
+        spellcheck="false"
+      >
+      <p id="add-error" class="field-error" hidden></p>
+      <p id="add-status" class="field-status" hidden></p>
+      <div class="modal-actions">
+        <button id="btn-cancel-add" class="btn-secondary">Cancel</button>
+        <button id="btn-confirm-add" class="btn-primary">Add</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Settings overlay ───────────────────────────────────── -->
+  <div id="modal-settings" class="modal" aria-hidden="true" role="dialog" aria-labelledby="settings-modal-title">
+    <div class="modal-backdrop"></div>
+    <div class="modal-sheet modal-sheet--narrow">
+      <h2 id="settings-modal-title">Settings</h2>
+
+      <div class="settings-group">
+        <label class="field-label" for="sort-key-select">Sort verses by</label>
+        <select id="sort-key-select" class="settings-select">
+          <option value="added">Date added</option>
+          <option value="biblical">Biblical order</option>
+          <option value="proficiency">Proficiency</option>
+        </select>
+      </div>
+
+      <div class="settings-group">
+        <label class="field-label" for="sort-dir-select">Order</label>
+        <select id="sort-dir-select" class="settings-select">
+          <option value="asc">Ascending</option>
+          <option value="desc">Descending</option>
+        </select>
+      </div>
+
+      <div class="modal-actions">
+        <button id="btn-close-settings" class="btn-secondary">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Delete confirmation modal ──────────────────────────── -->
+  <div id="modal-delete" class="modal" aria-hidden="true" role="alertdialog" aria-labelledby="delete-modal-title">
+    <div class="modal-backdrop"></div>
+    <div class="modal-sheet modal-sheet--narrow">
+      <h2 id="delete-modal-title">Remove verse?</h2>
+      <p class="delete-msg">Remove <strong id="delete-ref"></strong> from your list?</p>
+      <div class="modal-actions">
+        <button id="btn-cancel-delete" class="btn-secondary">Cancel</button>
+        <button id="btn-confirm-delete" class="btn-destructive">Remove</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
