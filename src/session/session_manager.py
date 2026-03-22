@@ -177,6 +177,14 @@ class SessionManager:
             )
 
     # ------------------------------------------------------------------
+    # Level query
+    # ------------------------------------------------------------------
+
+    def get_level(self, user_id: int, passage_ref: str) -> Level:
+        """Return the user's current proficiency level for this passage."""
+        return self._progression.get_level(user_id, passage_ref)
+
+    # ------------------------------------------------------------------
     # Segmentation
     # ------------------------------------------------------------------
 

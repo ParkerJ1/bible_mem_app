@@ -20,7 +20,8 @@ counts.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
+from typing import Callable, ContextManager
 
 import src.config as config
 from src.progression.levels import Level, advance, drop
@@ -155,6 +156,83 @@ class DefaultProgressionEngine(ProgressionEngine):
     def _save(self, user_id: int, verse_ref: str, state: _DayState) -> None:
         """Persist the updated state."""
         self._states[(user_id, verse_ref)] = state
+
+
+class DBProgressionEngine(DefaultProgressionEngine):
+    """Progression engine that persists state to the ``proficiency_records`` table.
+
+    Extends :class:`DefaultProgressionEngine` by overriding the ``_load`` and
+    ``_save`` hooks so that progression state survives application restarts.
+
+    In-memory state is kept as a write-through cache: every ``_save`` writes to
+    both the dict and the database; every ``_load`` checks the dict first and
+    falls back to the database.
+
+    Args:
+        db_factory: Zero-argument callable returning a DB session context manager
+                    (i.e. ``get_session`` from ``src.data.database``).
+        pass_threshold: Forwarded to :class:`DefaultProgressionEngine`.
+        drop_days:      Forwarded to :class:`DefaultProgressionEngine`.
+    """
+
+    def __init__(
+        self,
+        db_factory: Callable[[], ContextManager],
+        pass_threshold: float | None = None,
+        drop_days: int | None = None,
+    ) -> None:
+        super().__init__(pass_threshold=pass_threshold, drop_days=drop_days)
+        self._db_factory = db_factory
+
+    def _load(self, user_id: int, verse_ref: str) -> _DayState:
+        """Return state from the in-memory cache, falling back to the DB."""
+        if (user_id, verse_ref) in self._states:
+            return self._states[(user_id, verse_ref)]
+
+        from src.data.models import ProficiencyRecord  # local import avoids circular deps
+
+        with self._db_factory() as session:
+            pr = (
+                session.query(ProficiencyRecord)
+                .filter_by(user_id=user_id, verse_ref=verse_ref)
+                .first()
+            )
+            if pr is None:
+                return _DayState()
+
+            state = _DayState(
+                level=Level(pr.level),
+                pass_streak=pr.pass_streak,
+                fail_streak=pr.fail_streak,
+                last_attempt_date=pr.last_attempt_date,
+                last_day_passed=pr.last_day_passed,
+            )
+
+        self._states[(user_id, verse_ref)] = state
+        return state
+
+    def _save(self, user_id: int, verse_ref: str, state: _DayState) -> None:
+        """Write state to the in-memory cache and persist to the DB."""
+        self._states[(user_id, verse_ref)] = state
+
+        from src.data.models import ProficiencyRecord  # local import avoids circular deps
+
+        with self._db_factory() as session:
+            pr = (
+                session.query(ProficiencyRecord)
+                .filter_by(user_id=user_id, verse_ref=verse_ref)
+                .first()
+            )
+            if pr is None:
+                pr = ProficiencyRecord(user_id=user_id, verse_ref=verse_ref)
+                session.add(pr)
+
+            pr.level = state.level.value
+            pr.pass_streak = state.pass_streak
+            pr.fail_streak = state.fail_streak
+            pr.last_attempt_date = state.last_attempt_date
+            pr.last_day_passed = state.last_day_passed
+            pr.updated_at = datetime.now(UTC)
 
 
 # ------------------------------------------------------------------
