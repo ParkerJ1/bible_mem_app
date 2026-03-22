@@ -94,6 +94,25 @@ class ProficiencyRecord(Base):
     user: Mapped["User"] = relationship("User", back_populates="proficiency_records")
 
 
+class PreparedPassage(Base):
+    """Precomputed audio and word-level alignment for a passage.
+
+    Created by SessionManager.prepare_verse() when a user adds a verse to
+    their list. Stores the TTS audio path and the full alignment so the
+    Session Manager can slice audio into segments without re-running TTS
+    or alignment on every session.
+    """
+
+    __tablename__ = "prepared_passages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    passage_ref: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    full_text: Mapped[str] = mapped_column(String, nullable=False)
+    audio_path: Mapped[str] = mapped_column(String, nullable=False)
+    timestamps_json: Mapped[str] = mapped_column(String, nullable=False)  # JSON list of {word, start, end}
+    prepared_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+
+
 class SessionRecord(Base):
     """A record of a single practice session attempt."""
 
