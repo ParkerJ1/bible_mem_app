@@ -40,7 +40,9 @@ the user's recording against the full passage text.
 
 import json
 import re
+import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -72,6 +74,7 @@ class SegmentResult:
     segment_idx: int
     expected: str
     score: float
+    got: str = ""
     diff: list[DiffToken] = field(default_factory=list)
 
 
@@ -300,6 +303,7 @@ class SessionManager:
             segment_idx=segment_idx,
             expected=expected,
             score=result.score,
+            got=result.got,
             diff=result.diff,
         )
 
@@ -357,6 +361,58 @@ class SessionManager:
             level_after=outcome.level_after,
             passed=outcome.passed,
         )
+
+    # ------------------------------------------------------------------
+    # Finish from raw audio
+    # ------------------------------------------------------------------
+
+    def finish_session_from_audio(
+        self,
+        user_id: int,
+        passage_ref: str,
+        audio_files: list[Path],
+        attempt_date: date | None = None,
+    ) -> SessionResult:
+        """Stitch segment audio files, transcribe once, and score against the full passage.
+
+        Concatenates all recorded segment audio files into a single file using
+        ffmpeg, runs speech recognition once on the stitched result, scores the
+        transcript against the full passage text, and delegates to finish_session
+        to update progression and record the session.
+
+        Args:
+            user_id:      The user's database id.
+            passage_ref:  The passage reference string.
+            audio_files:  Ordered list of recorded segment audio file paths.
+            attempt_date: Calendar date of the session (defaults to today).
+
+        Returns:
+            SessionResult with the overall score and updated proficiency level.
+
+        Raises:
+            ValueError: If audio_files is empty.
+        """
+        if not audio_files:
+            raise ValueError("audio_files must not be empty")
+
+        full_text = self._load_full_text(passage_ref)
+        stitched = _concat_audio(audio_files)
+
+        try:
+            transcript = self._recogniser.recognise(stitched)
+            score_result = self._scorer.score(full_text, transcript.text)
+        finally:
+            stitched.unlink(missing_ok=True)
+
+        segment_result = SegmentResult(
+            segment_idx=0,
+            expected=full_text,
+            score=score_result.score,
+            got=score_result.got,
+            diff=score_result.diff,
+        )
+
+        return self.finish_session(user_id, passage_ref, [segment_result], attempt_date)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -475,6 +531,52 @@ def _slice_audio(
         capture_output=True,
     )
     return dest_path
+
+
+def _concat_audio(audio_files: list[Path]) -> Path:
+    """Concatenate audio files in order using ffmpeg concat demuxer.
+
+    Returns the path to a new temporary file containing the stitched audio.
+    The caller is responsible for deleting the returned file.
+
+    For a single-file input the file is copied directly without invoking ffmpeg.
+
+    Args:
+        audio_files: Ordered list of audio files to concatenate.
+
+    Returns:
+        Path to the stitched temporary audio file.
+    """
+    suffix = audio_files[0].suffix if audio_files else ".webm"
+
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        out_path = Path(tmp.name)
+
+    if len(audio_files) == 1:
+        shutil.copy(audio_files[0], out_path)
+        return out_path
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as list_file:
+        list_path = Path(list_file.name)
+        for p in audio_files:
+            list_file.write(f"file '{p.resolve()}'\n")
+
+    try:
+        subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-f", "concat", "-safe", "0",
+                "-i", str(list_path),
+                "-c", "copy",
+                str(out_path),
+            ],
+            check=True,
+            capture_output=True,
+        )
+    finally:
+        list_path.unlink(missing_ok=True)
+
+    return out_path
 
 
 def _ref_slug(passage_ref: str) -> str:

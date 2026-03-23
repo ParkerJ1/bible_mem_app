@@ -86,6 +86,13 @@
         </select>
       </div>
 
+      <div class="settings-group">
+        <label class="field-label" for="mic-select">Microphone</label>
+        <select id="mic-select" class="settings-select">
+          <option value="">Default</option>
+        </select>
+      </div>
+
       <div class="modal-actions">
         <button id="btn-close-settings" class="btn-secondary">Done</button>
       </div>
@@ -105,6 +112,80 @@
     </div>
   </div>
 
+  <!-- ── Session start overlay ──────────────────── -->
+  <div id="modal-session-start" class="modal" aria-hidden="true" role="dialog" aria-labelledby="session-start-title">
+    <div class="modal-backdrop"></div>
+    <div class="modal-sheet">
+      <h2 id="session-start-title">Start Practice</h2>
+
+      <label class="field-label">Duration</label>
+      <div class="seg-control" id="time-seg" role="group" aria-label="Session duration">
+        <button class="seg-btn active" data-value="1">Just One</button>
+        <button class="seg-btn" data-value="5">5 min</button>
+        <button class="seg-btn" data-value="10">10 min</button>
+        <button class="seg-btn" data-value="15">15 min</button>
+        <button class="seg-btn" data-value="0">All</button>
+      </div>
+
+      <label class="field-label" style="margin-top:20px">Start with</label>
+      <div class="seg-control seg-control--col" id="priority-seg" role="group" aria-label="Verse priority">
+        <button class="seg-btn active" data-value="struggling">Verses I'm struggling with</button>
+        <button class="seg-btn" data-value="neglected">Least recently practiced</button>
+        <button class="seg-btn" data-value="recent">Recently added</button>
+        <button class="seg-btn" data-value="random">Random</button>
+      </div>
+
+      <div class="modal-actions">
+        <button id="btn-cancel-session" class="btn-secondary">Cancel</button>
+        <button id="btn-start-session" class="btn-primary">Start</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Session screen ─────────────────────────── -->
+  <div id="session-screen" aria-live="polite">
+
+    <div id="session-header">
+      <div id="session-ref-label"></div>
+      <div id="session-segment-label"></div>
+    </div>
+
+    <div id="session-main">
+
+      <!-- Pulse / status view -->
+      <div id="session-pulse-view">
+        <div id="session-spinner" class="spinner"></div>
+        <div id="session-pulse-wrap">
+          <div class="pulse-ring"></div>
+          <div class="pulse-ring"></div>
+          <div class="pulse-ring"></div>
+          <div id="session-pulse-core"></div>
+        </div>
+        <div id="session-status-label"></div>
+      </div>
+
+      <!-- Passage feedback view (after all segments complete) -->
+      <div id="session-feedback-view">
+        <div id="feedback-top">
+          <span id="feedback-ref"></span>
+          <span id="feedback-score-pill"></span>
+        </div>
+        <div id="feedback-diff"></div>
+        <div id="feedback-transcript"></div>
+        <div id="feedback-level"></div>
+        <button id="btn-continue-session" class="btn-primary">Continue →</button>
+      </div>
+
+    </div>
+
+    <div id="session-controls">
+      <button id="btn-restart-verse" class="session-ctrl-btn" aria-label="Restart this verse">↺ Restart</button>
+      <button id="btn-end-session" class="session-ctrl-btn" aria-label="End session">End session</button>
+    </div>
+
+  </div>
+
   <script src="/static/js/app.js"></script>
+  <script src="/static/js/session.js"></script>
 </body>
 </html>

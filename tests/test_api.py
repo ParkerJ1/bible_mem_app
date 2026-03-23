@@ -10,7 +10,8 @@ the default user / verse-list seed are performed directly in fixtures.
 """
 
 from datetime import date
-from unittest.mock import MagicMock
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -78,7 +79,7 @@ def seed_db(TestSession):
 def mock_sm():
     """A MagicMock configured with the SessionManager spec."""
     return MagicMock(spec_set=["prepare_verse", "get_segments", "get_level",
-                                "get_segment_audio", "score_attempt", "finish_session"])
+                                "get_segment_audio", "finish_session_from_audio"])
 
 
 @pytest.fixture()
@@ -124,7 +125,12 @@ def _make_session_result(
     level_after: Level = Level.WORDS_3,
     passed: bool = True,
 ) -> SessionResult:
-    seg = SegmentResult(segment_idx=0, expected="For God so loved", score=overall_score)
+    seg = SegmentResult(
+        segment_idx=0,
+        expected="For God so loved the world",
+        score=overall_score,
+        got="for god so loved the world",
+    )
     return SessionResult(
         passage_ref=passage_ref,
         overall_score=overall_score,
@@ -368,47 +374,39 @@ class TestGetSegmentAudio:
 
 
 class TestScoreSegment:
-    def _post_score(self, client, passage_ref="John 3:16", segment_idx=0,
+    def _post_score(self, client, tmp_path, passage_ref="John 3:16", segment_idx=0,
                     audio_bytes=b"FAKE_AUDIO"):
-        return client.post(
-            "/sessions/score",
-            data={"passage_ref": passage_ref, "segment_idx": str(segment_idx)},
-            files={"audio": ("recording.wav", audio_bytes, "audio/wav")},
-        )
+        with patch("src.api.routers.sessions._TEMP_AUDIO_DIR", tmp_path):
+            return client.post(
+                "/sessions/score",
+                data={"passage_ref": passage_ref, "segment_idx": str(segment_idx)},
+                files={"audio": ("recording.webm", audio_bytes, "audio/webm")},
+            )
 
-    def test_returns_200(self, client, mock_sm):
-        mock_sm.score_attempt.return_value = SegmentResult(
-            segment_idx=0, expected="For God so loved", score=1.0
-        )
-        response = self._post_score(client)
+    def test_returns_200(self, client, tmp_path):
+        response = self._post_score(client, tmp_path)
         assert response.status_code == 200
 
-    def test_response_shape(self, client, mock_sm):
-        mock_sm.score_attempt.return_value = SegmentResult(
-            segment_idx=0, expected="For God so loved", score=0.75
-        )
-        body = self._post_score(client).json()
+    def test_response_shape(self, client, tmp_path):
+        body = self._post_score(client, tmp_path).json()
+        assert body["saved"] is True
         assert body["segment_idx"] == 0
-        assert body["expected"] == "For God so loved"
-        assert body["score"] == pytest.approx(0.75)
-        assert isinstance(body["diff"], list)
 
-    def test_calls_score_attempt_with_user_id(self, client, mock_sm):
-        mock_sm.score_attempt.return_value = SegmentResult(
-            segment_idx=0, expected="text", score=1.0
-        )
-        self._post_score(client, passage_ref="John 3:16", segment_idx=2)
-        call_args = mock_sm.score_attempt.call_args
-        assert call_args[0][0] == USER_ID       # user_id
-        assert call_args[0][1] == "John 3:16"  # passage_ref
-        assert call_args[0][2] == 2             # segment_idx
-        # call_args[0][3] is the tmp_path — just check it is a Path
-        assert hasattr(call_args[0][3], "suffix")
+    def test_saves_audio_file_with_correct_name(self, client, tmp_path):
+        self._post_score(client, tmp_path, segment_idx=2)
+        expected = tmp_path / f"{USER_ID}_john_3_16_002.webm"
+        assert expected.exists()
+        assert expected.read_bytes() == b"FAKE_AUDIO"
 
-    def test_bad_segment_idx_returns_422(self, client, mock_sm):
-        mock_sm.score_attempt.side_effect = IndexError("segment_idx 99 out of range")
-        response = self._post_score(client, segment_idx=99)
-        assert response.status_code == 422
+    def test_overwrite_same_segment_on_restart(self, client, tmp_path):
+        """Re-recording segment 0 overwrites the previous file."""
+        self._post_score(client, tmp_path, segment_idx=0, audio_bytes=b"FIRST")
+        self._post_score(client, tmp_path, segment_idx=0, audio_bytes=b"SECOND")
+        assert (tmp_path / f"{USER_ID}_john_3_16_000.webm").read_bytes() == b"SECOND"
+
+    def test_does_not_use_session_manager(self, client, mock_sm, tmp_path):
+        self._post_score(client, tmp_path)
+        assert not mock_sm.finish_session_from_audio.called
 
 
 # ---------------------------------------------------------------------------
@@ -417,58 +415,103 @@ class TestScoreSegment:
 
 
 class TestFinishSession:
-    _FINISH_BODY = {
-        "passage_ref": "John 3:16",
-        "segment_results": [
-            {"segment_idx": 0, "expected": "For God so loved", "score": 0.9},
-            {"segment_idx": 1, "expected": "the world", "score": 1.0},
-        ],
-    }
+    def _post_finish(self, client, mock_sm, tmp_path,
+                     passage_ref="John 3:16", segment_count=1,
+                     audio_content=b"AUDIO"):
+        slug = f"{USER_ID}_john_3_16"
+        for i in range(segment_count):
+            (tmp_path / f"{slug}_{i:03d}.webm").write_bytes(audio_content)
+        mock_sm.finish_session_from_audio.return_value = _make_session_result(
+            passage_ref=passage_ref,
+        )
+        with patch("src.api.routers.sessions._TEMP_AUDIO_DIR", tmp_path):
+            return client.post("/sessions/finish", json={
+                "passage_ref": passage_ref,
+                "segment_count": segment_count,
+            })
 
-    def test_returns_200(self, client, mock_sm):
-        mock_sm.finish_session.return_value = _make_session_result(overall_score=0.95)
-        response = client.post("/sessions/finish", json=self._FINISH_BODY)
+    def test_returns_200(self, client, mock_sm, tmp_path):
+        response = self._post_finish(client, mock_sm, tmp_path)
         assert response.status_code == 200
 
-    def test_response_shape(self, client, mock_sm):
-        mock_sm.finish_session.return_value = _make_session_result(overall_score=0.95)
-        body = client.post("/sessions/finish", json=self._FINISH_BODY).json()
+    def test_response_shape(self, client, mock_sm, tmp_path):
+        mock_sm.finish_session_from_audio.return_value = _make_session_result(overall_score=0.95)
+        (tmp_path / f"{USER_ID}_john_3_16_000.webm").write_bytes(b"A")
+        with patch("src.api.routers.sessions._TEMP_AUDIO_DIR", tmp_path):
+            body = client.post("/sessions/finish", json={
+                "passage_ref": "John 3:16", "segment_count": 1,
+            }).json()
         assert body["passage_ref"] == "John 3:16"
         assert body["overall_score"] == pytest.approx(0.95)
+        assert "transcript" in body
+        assert "diff" in body
+        assert isinstance(body["diff"], list)
         assert "level_before" in body
         assert "level_after" in body
         assert "level_before_name" in body
         assert "level_after_name" in body
         assert "passed" in body
 
-    def test_calls_finish_session_with_user_id(self, client, mock_sm):
-        mock_sm.finish_session.return_value = _make_session_result()
-        client.post("/sessions/finish", json=self._FINISH_BODY)
-        call_args = mock_sm.finish_session.call_args[0]
+    def test_calls_finish_session_from_audio_with_correct_args(self, client, mock_sm, tmp_path):
+        mock_sm.finish_session_from_audio.return_value = _make_session_result()
+        (tmp_path / f"{USER_ID}_john_3_16_000.webm").write_bytes(b"A")
+        (tmp_path / f"{USER_ID}_john_3_16_001.webm").write_bytes(b"B")
+        with patch("src.api.routers.sessions._TEMP_AUDIO_DIR", tmp_path):
+            client.post("/sessions/finish", json={
+                "passage_ref": "John 3:16", "segment_count": 2,
+            })
+        call_args = mock_sm.finish_session_from_audio.call_args[0]
         assert call_args[0] == USER_ID
         assert call_args[1] == "John 3:16"
-        segment_results = call_args[2]
-        assert len(segment_results) == 2
-        assert segment_results[0].score == pytest.approx(0.9)
-        assert segment_results[1].score == pytest.approx(1.0)
+        assert len(call_args[2]) == 2
+        assert all(isinstance(p, Path) for p in call_args[2])
 
-    def test_level_advance_reflected_in_response(self, client, mock_sm):
-        mock_sm.finish_session.return_value = _make_session_result(
+    def test_skipped_segments_excluded_from_audio_list(self, client, mock_sm, tmp_path):
+        """Segment 1 was skipped; only segments 0 and 2 should be stitched."""
+        mock_sm.finish_session_from_audio.return_value = _make_session_result()
+        (tmp_path / f"{USER_ID}_john_3_16_000.webm").write_bytes(b"A")
+        (tmp_path / f"{USER_ID}_john_3_16_002.webm").write_bytes(b"C")
+        with patch("src.api.routers.sessions._TEMP_AUDIO_DIR", tmp_path):
+            client.post("/sessions/finish", json={
+                "passage_ref": "John 3:16", "segment_count": 3,
+            })
+        audio_files = mock_sm.finish_session_from_audio.call_args[0][2]
+        assert len(audio_files) == 2
+
+    def test_level_advance_reflected_in_response(self, client, mock_sm, tmp_path):
+        mock_sm.finish_session_from_audio.return_value = _make_session_result(
             level_before=Level.WORDS_3,
             level_after=Level.WORDS_5,
             passed=True,
         )
-        body = client.post("/sessions/finish", json=self._FINISH_BODY).json()
+        (tmp_path / f"{USER_ID}_john_3_16_000.webm").write_bytes(b"A")
+        with patch("src.api.routers.sessions._TEMP_AUDIO_DIR", tmp_path):
+            body = client.post("/sessions/finish", json={
+                "passage_ref": "John 3:16", "segment_count": 1,
+            }).json()
         assert body["level_before"] == Level.WORDS_3.value
         assert body["level_after"] == Level.WORDS_5.value
         assert body["passed"] is True
 
-    def test_empty_segment_results_returns_422(self, client, mock_sm):
-        response = client.post("/sessions/finish", json={
-            "passage_ref": "John 3:16",
-            "segment_results": [],
-        })
+    def test_no_audio_files_returns_422(self, client, mock_sm, tmp_path):
+        with patch("src.api.routers.sessions._TEMP_AUDIO_DIR", tmp_path):
+            response = client.post("/sessions/finish", json={
+                "passage_ref": "John 3:16", "segment_count": 2,
+            })
         assert response.status_code == 422
+
+    def test_cleans_up_temp_files_after_finish(self, client, mock_sm, tmp_path):
+        mock_sm.finish_session_from_audio.return_value = _make_session_result()
+        audio_file = tmp_path / f"{USER_ID}_john_3_16_000.webm"
+        stale_file = tmp_path / f"{USER_ID}_john_3_16_001.webm"
+        audio_file.write_bytes(b"A")
+        stale_file.write_bytes(b"STALE")
+        with patch("src.api.routers.sessions._TEMP_AUDIO_DIR", tmp_path):
+            client.post("/sessions/finish", json={
+                "passage_ref": "John 3:16", "segment_count": 1,
+            })
+        assert not audio_file.exists()
+        assert not stale_file.exists()
 
 
 # ---------------------------------------------------------------------------

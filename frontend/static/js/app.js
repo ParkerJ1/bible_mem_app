@@ -243,6 +243,7 @@ function patchCard(v) {
 function openSettings() {
   document.getElementById('sort-key-select').value = state.sortKey;
   document.getElementById('sort-dir-select').value = state.sortDir;
+  populateMicSelect();
   openModal('modal-settings');
 }
 
@@ -538,6 +539,40 @@ function escapeAttr(str) {
 }
 
 // ─────────────────────────────────────────────
+// Microphone device enumeration
+// ─────────────────────────────────────────────
+
+async function populateMicSelect() {
+  const select = document.getElementById('mic-select');
+  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+
+  // enumerateDevices may return empty labels until permission is granted;
+  // we populate lazily when the settings modal opens so labels are available
+  // after the session (which requests mic permission) has run at least once.
+  let devices;
+  try {
+    devices = await navigator.mediaDevices.enumerateDevices();
+  } catch (_) {
+    return;
+  }
+
+  const inputs = devices.filter(d => d.kind === 'audioinput');
+
+  // Rebuild options (keep the "Default" option at index 0)
+  select.innerHTML = '<option value="">Default</option>';
+  inputs.forEach(d => {
+    const opt = document.createElement('option');
+    opt.value = d.deviceId;
+    opt.textContent = d.label || `Microphone (${d.deviceId.slice(0, 8)}…)`;
+    select.appendChild(opt);
+  });
+
+  // Restore saved selection
+  const saved = localStorage.getItem('micDeviceId');
+  if (saved) select.value = saved;
+}
+
+// ─────────────────────────────────────────────
 // Boot
 // ─────────────────────────────────────────────
 
@@ -546,10 +581,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── FAB ──────────────────────────────────────
   document.getElementById('fab').addEventListener('click', openAddModal);
 
-  // ── Practice (placeholder) ───────────────────
-  document.getElementById('btn-practice').addEventListener('click', () => {
-    showToast('Practice sessions coming soon.');
-  });
+  // ── Practice button wired in session.js ──────
 
   // ── Settings ──────────────────────────────────
   document.getElementById('btn-settings').addEventListener('click', openSettings);
@@ -599,13 +631,21 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    ['modal-add', 'modal-delete', 'modal-settings'].forEach(id => {
+    ['modal-add', 'modal-delete', 'modal-settings', 'modal-session-start'].forEach(id => {
       if (isModalOpen(id)) {
         if (id === 'modal-add' && _addAbort) _addAbort.abort();
         if (id === 'modal-delete') state.pendingDelete = null;
         closeModal(id);
       }
     });
+  });
+
+  // ── Microphone selector ───────────────────────
+  populateMicSelect();
+  document.getElementById('mic-select').addEventListener('change', e => {
+    const val = e.target.value;
+    if (val) localStorage.setItem('micDeviceId', val);
+    else     localStorage.removeItem('micDeviceId');
   });
 
   // ── Initial load ──────────────────────────────
