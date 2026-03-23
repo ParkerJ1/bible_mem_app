@@ -17,6 +17,8 @@ wheels/
 
 # App-specific
 audio_cache/
+session_cache/
+
 
 # Test cache
 .pytest_cache/
