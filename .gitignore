@@ -18,6 +18,7 @@ wheels/
 # App-specific
 audio_cache/
 session_cache/
+segment_cache/
 
 
 # Test cache
