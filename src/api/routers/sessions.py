@@ -160,7 +160,7 @@ def get_segment_audio(
     if path is None or not path.exists():
         raise HTTPException(status_code=404, detail="Audio not available for this segment")
 
-    return FileResponse(path, media_type="audio/mpeg")
+    return FileResponse(path, media_type="audio/mpeg", headers={"Cache-Control": "no-store"})
 
 
 @router.post("/score", response_model=SaveAudioResponse)

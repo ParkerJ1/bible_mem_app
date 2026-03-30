@@ -197,7 +197,7 @@ async function _practiceSegment() {
 
   const ref = SESSION.passageRef;
   const idx = SESSION.segmentIdx;
-  const audioUrl = `/sessions/${encodeURIComponent(ref)}/segments/${idx}/audio`;
+  const audioUrl = `/sessions/${encodeURIComponent(ref)}/segments/${idx}/audio?t=${Date.now()}`;
 
   // Ensure recording is fully stopped before any playback begins
   _stopRecording(true);

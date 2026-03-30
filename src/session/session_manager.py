@@ -59,7 +59,7 @@ from src.text.base import TextProvider
 from src.tts.base import TTSProvider
 
 _SEGMENTER = PunctuationSegmenter()
-_SEGMENT_PAD_MS = 150  # silence padding added to each side of a sliced segment
+_SEGMENT_PAD_MS = 0 # 150  # silence padding added to each side of a sliced segment
 
 
 # ---------------------------------------------------------------------------
@@ -132,7 +132,7 @@ class SessionManager:
         self._scorer = scorer
         self._progression = progression
         self._db = db_factory
-        self._segments_dir = segments_dir
+        self._segments_dir = segments_dir.resolve()
         self._segments_dir.mkdir(exist_ok=True)
 
     # ------------------------------------------------------------------
@@ -168,6 +168,8 @@ class SessionManager:
         timestamps_json = json.dumps(
             [{"word": t.word, "start": t.start, "end": t.end} for t in timestamps]
         )
+
+        _write_timestamp_table(audio_path, timestamps)
 
         with self._db() as session:
             session.add(
@@ -513,23 +515,47 @@ def _slice_audio(
 
     # Clamp indices to the available timestamp range
     max_idx = len(timestamps) - 1
-    t_start = max(0.0, timestamps[min(word_start, max_idx)].start - pad_s)
-    t_end = timestamps[min(word_end, max_idx)].end + pad_s
+    # At the very start of the file use 0.0 exactly rather than the first
+    # word's timestamp, which may have a small silence already.
+    t_start = 0.0 if word_start == 0 else max(0.0, timestamps[min(word_start, max_idx)].start - pad_s)
+    # At the very end of the file omit -to so ffmpeg reads to EOF rather
+    # than relying on the last word's end timestamp, which may be clipped.
+    at_end = word_end >= max_idx
+    t_end = None if at_end else timestamps[min(word_end, max_idx)].end + pad_s
 
     dest_path.parent.mkdir(parents=True, exist_ok=True)
 
-    subprocess.run(
-        [
+    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+
+    try:
+        # Pass 1: sample-accurate slice from the full-passage audio.
+        slice_cmd = [
             "ffmpeg", "-y",
             "-i", str(source_path),
             "-ss", f"{t_start:.3f}",
-            "-to", f"{t_end:.3f}",
-            "-c", "copy",
-            str(dest_path),
-        ],
-        check=True,
-        capture_output=True,
-    )
+        ]
+        if t_end is not None:
+            slice_cmd += ["-to", f"{t_end:.3f}"]
+        slice_cmd += ["-acodec", "libmp3lame", "-q:a", "2", str(tmp_path)]
+        subprocess.run(slice_cmd, check=True, capture_output=True)
+
+        # Pass 2: prepend 200 ms of silence to compensate for browser
+        # audio playback latency so the first word is not clipped.
+        subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-i", str(tmp_path),
+                "-af", "adelay=200:all=1",
+                "-acodec", "libmp3lame", "-q:a", "2",
+                str(dest_path),
+            ],
+            check=True,
+            capture_output=True,
+        )
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
     return dest_path
 
 
@@ -582,3 +608,24 @@ def _concat_audio(audio_files: list[Path]) -> Path:
 def _ref_slug(passage_ref: str) -> str:
     """Convert a passage ref to a safe filename component, e.g. 'john_3_16'."""
     return re.sub(r"[^a-z0-9]+", "_", passage_ref.lower()).strip("_")
+
+
+def _write_timestamp_table(audio_path: Path, timestamps: list) -> None:
+    """Write word timestamps as a readable table next to the audio file.
+
+    Creates a .txt file with the same stem as audio_path, e.g.
+    audio_cache/abc123.txt alongside audio_cache/abc123.mp3.
+
+    Args:
+        audio_path:  Path to the full-passage audio file.
+        timestamps:  Word-level alignment result from the Aligner.
+    """
+    txt_path = audio_path.with_suffix(".txt")
+    col_w = max((len(t.word) for t in timestamps), default=4)
+    header = f"{'#':>4}  {'Word':<{col_w}}  {'Start':>7}  {'End':>7}  {'Dur':>6}"
+    separator = "-" * len(header)
+    lines = [header, separator]
+    for i, t in enumerate(timestamps):
+        dur = t.end - t.start
+        lines.append(f"{i:>4}  {t.word:<{col_w}}  {t.start:>7.3f}  {t.end:>7.3f}  {dur:>6.3f}s")
+    txt_path.write_text("\n".join(lines), encoding="utf-8")
